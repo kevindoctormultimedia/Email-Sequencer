@@ -113,24 +113,37 @@ export async function initDb() {
   `);
 }
 
+let dbInitialized = false;
+
+async function ensureInit() {
+  if (!dbInitialized) {
+    await initDb();
+    dbInitialized = true;
+  }
+}
+
 export async function dbRun(sql: string, params: unknown[] = []) {
+  await ensureInit();
   const c = getClient();
   return await c.execute({ sql, args: params as any });
 }
 
 export async function dbAll(sql: string, params: unknown[] = []) {
+  await ensureInit();
   const c = getClient();
   const result = await c.execute({ sql, args: params as any });
   return result.rows;
 }
 
 export async function dbGet(sql: string, params: unknown[] = []) {
+  await ensureInit();
   const c = getClient();
   const result = await c.execute({ sql, args: params as any });
   return result.rows[0] || null;
 }
 
 export async function dbExec(sql: string) {
+  await ensureInit();
   const c = getClient();
   return await c.executeMultiple(sql);
 }
