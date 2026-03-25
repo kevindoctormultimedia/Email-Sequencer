@@ -122,24 +122,38 @@ async function ensureInit() {
   }
 }
 
+// Convert BigInt values to Numbers so JSON.stringify works
+function sanitizeRow(row: Record<string, unknown>): Record<string, unknown> {
+  const clean: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(row)) {
+    clean[key] = typeof val === 'bigint' ? Number(val) : val;
+  }
+  return clean;
+}
+
+function sanitizeRows(rows: any[]): Record<string, unknown>[] {
+  return rows.map(r => sanitizeRow(r as Record<string, unknown>));
+}
+
 export async function dbRun(sql: string, params: unknown[] = []) {
   await ensureInit();
   const c = getClient();
-  return await c.execute({ sql, args: params as any });
+  const result = await c.execute({ sql, args: params as any });
+  return { ...result, lastInsertRowid: Number(result.lastInsertRowid ?? 0) };
 }
 
 export async function dbAll(sql: string, params: unknown[] = []) {
   await ensureInit();
   const c = getClient();
   const result = await c.execute({ sql, args: params as any });
-  return result.rows;
+  return sanitizeRows(result.rows as any[]);
 }
 
 export async function dbGet(sql: string, params: unknown[] = []) {
   await ensureInit();
   const c = getClient();
   const result = await c.execute({ sql, args: params as any });
-  return result.rows[0] || null;
+  return result.rows[0] ? sanitizeRow(result.rows[0] as Record<string, unknown>) : null;
 }
 
 export async function dbExec(sql: string) {
