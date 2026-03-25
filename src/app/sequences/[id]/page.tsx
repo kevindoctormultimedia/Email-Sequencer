@@ -31,6 +31,27 @@ export default function SequenceDetailPage() {
   const [delayDays, setDelayDays] = useState(1);
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [previews, setPreviewData] = useState<{
+    sequenceName: string;
+    totalContacts: number;
+    previewCount: number;
+    previews: {
+      contactId: number;
+      contactEmail: string;
+      contactName: string;
+      stepOrder: number;
+      stepId: number;
+      subject: string;
+      body: string;
+      rawBody: string;
+      fromName: string;
+      fromEmail: string;
+      hasUnresolvedVars: boolean;
+    }[];
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
 
   function loadData() {
     fetch(`/api/sequences/${params.id}`).then(r => r.json()).then(setData);
@@ -72,7 +93,27 @@ export default function SequenceDetailPage() {
     setShowAddStep(true);
   }
 
-  async function handleSend() {
+  async function handlePreview() {
+    setPreviewLoading(true);
+    setPreviewIndex(0);
+    try {
+      const res = await fetch(`/api/sequences/${params.id}/preview`);
+      const result = await res.json();
+      if (result.error) {
+        setSendResult(`Error: ${result.error}`);
+      } else {
+        setPreviewData(result);
+        setShowPreview(true);
+      }
+    } catch {
+      setSendResult('Failed to load preview');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handleSendConfirmed() {
+    setShowPreview(false);
     setSending(true);
     setSendResult('');
     try {
@@ -81,7 +122,7 @@ export default function SequenceDetailPage() {
       if (result.error) {
         setSendResult(`Error: ${result.error}`);
       } else {
-        setSendResult(`Sent ${result.sent} emails, ${result.skipped} skipped, ${result.errors} errors`);
+        setSendResult(`✓ Sent ${result.sent} emails, ${result.skipped} skipped, ${result.errors} errors`);
         loadData();
       }
     } catch {
@@ -106,9 +147,9 @@ export default function SequenceDetailPage() {
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
             + Add Step
           </button>
-          <button onClick={handleSend} disabled={sending || data.steps.length === 0}
+          <button onClick={handlePreview} disabled={sending || previewLoading || data.steps.length === 0}
             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-medium">
-            {sending ? 'Sending...' : 'Send Emails'}
+            {previewLoading ? 'Loading Preview...' : sending ? 'Sending...' : 'Preview & Send'}
           </button>
         </div>
       </div>
@@ -183,6 +224,128 @@ export default function SequenceDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Email Preview Modal */}
+      {showPreview && previews && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Email Preview</h2>
+                <p className="text-sm text-gray-600">
+                  {previews.previewCount} email{previews.previewCount !== 1 ? 's' : ''} ready to send
+                </p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+            </div>
+
+            {previews.previewCount === 0 ? (
+              <div className="p-12 text-center">
+                <p className="text-gray-700 font-medium">No emails to send right now</p>
+                <p className="text-sm text-gray-600 mt-1">All contacts are either completed, waiting for their delay period, or already received this step.</p>
+                <button onClick={() => setShowPreview(false)} className="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">Close</button>
+              </div>
+            ) : (
+              <>
+                {/* Email Navigation */}
+                {previews.previewCount > 1 && (
+                  <div className="px-6 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+                    <button
+                      onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
+                      disabled={previewIndex === 0}
+                      className="text-sm text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
+                    >
+                      ← Previous
+                    </button>
+                    <span className="text-sm text-gray-700 font-medium">
+                      {previewIndex + 1} of {previews.previewCount}
+                    </span>
+                    <button
+                      onClick={() => setPreviewIndex(Math.min(previews.previewCount - 1, previewIndex + 1))}
+                      disabled={previewIndex === previews.previewCount - 1}
+                      className="text-sm text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
+                    >
+                      Next →
+                    </button>
+                  </div>
+                )}
+
+                {/* Email Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {(() => {
+                    const email = previews.previews[previewIndex];
+                    if (!email) return null;
+                    return (
+                      <div className="space-y-4">
+                        {/* Warning if unresolved variables */}
+                        {email.hasUnresolvedVars && (
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                            ⚠️ This email may have unresolved template variables. Check that contact data is complete.
+                          </div>
+                        )}
+
+                        {/* Email Header */}
+                        <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+                          <div className="flex">
+                            <span className="w-20 text-gray-600 font-medium">From:</span>
+                            <span className="text-gray-900">{email.fromName} &lt;{email.fromEmail}&gt;</span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-20 text-gray-600 font-medium">To:</span>
+                            <span className="text-gray-900">{email.contactName ? `${email.contactName} <${email.contactEmail}>` : email.contactEmail}</span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-20 text-gray-600 font-medium">Subject:</span>
+                            <span className="text-gray-900 font-semibold">{email.subject}</span>
+                          </div>
+                          <div className="flex">
+                            <span className="w-20 text-gray-600 font-medium">Step:</span>
+                            <span className="text-gray-900">#{email.stepOrder}</span>
+                          </div>
+                        </div>
+
+                        {/* Email Body Preview */}
+                        <div className="border border-gray-200 rounded-lg">
+                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-600 font-medium">
+                            EMAIL BODY PREVIEW
+                          </div>
+                          <div
+                            className="p-6 text-sm leading-relaxed"
+                            style={{ fontFamily: 'Arial, sans-serif' }}
+                            dangerouslySetInnerHTML={{ __html: email.body }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Modal Footer */}
+                <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50 rounded-b-2xl">
+                  <button
+                    onClick={() => setShowPreview(false)}
+                    className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-gray-600">
+                      Send {previews.previewCount} email{previews.previewCount !== 1 ? 's' : ''}?
+                    </span>
+                    <button
+                      onClick={handleSendConfirmed}
+                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold shadow-sm"
+                    >
+                      ✓ Confirm & Send
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Contacts in Sequence */}
       <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
