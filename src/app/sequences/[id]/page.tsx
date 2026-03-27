@@ -55,6 +55,7 @@ export default function SequenceDetailPage() {
   const [editedEmails, setEditedEmails] = useState<Record<number, { subject: string; body: string }>>({});
   const [editingBody, setEditingBody] = useState(false);
   const [selectedForSend, setSelectedForSend] = useState<Set<number>>(new Set());
+  const [selectedContacts, setSelectedContacts] = useState<Set<number>>(new Set());
 
   function loadData() {
     fetch(`/api/sequences/${params.id}`).then(r => r.json()).then(setData);
@@ -116,6 +117,39 @@ export default function SequenceDetailPage() {
         // Select all by default
         setSelectedForSend(new Set(result.previews.map((_: unknown, i: number) => i)));
         setPreviewData(result);
+        setShowPreview(true);
+      }
+    } catch {
+      setSendResult('Failed to load preview');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function handlePreviewSelected() {
+    setPreviewLoading(true);
+    setPreviewIndex(0);
+    setEditedEmails({});
+    setEditingBody(false);
+    try {
+      const res = await fetch(`/api/sequences/${params.id}/preview`);
+      const result = await res.json();
+      if (result.error) {
+        setSendResult(`Error: ${result.error}`);
+      } else {
+        // Filter to only the selected contacts
+        const filtered = {
+          ...result,
+          previews: result.previews.filter((p: { contactId: number }) => selectedContacts.has(p.contactId)),
+          previewCount: result.previews.filter((p: { contactId: number }) => selectedContacts.has(p.contactId)).length,
+        };
+        const edits: Record<number, { subject: string; body: string }> = {};
+        filtered.previews.forEach((p: { subject: string; body: string }, i: number) => {
+          edits[i] = { subject: p.subject, body: p.body };
+        });
+        setEditedEmails(edits);
+        setSelectedForSend(new Set(filtered.previews.map((_: unknown, i: number) => i)));
+        setPreviewData(filtered);
         setShowPreview(true);
       }
     } catch {
@@ -441,7 +475,18 @@ export default function SequenceDetailPage() {
 
       {/* Contacts in Sequence */}
       <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-        <h3 className="font-semibold text-gray-900 mb-4">Contacts in Sequence ({data.contacts.length})</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900">Contacts in Sequence ({data.contacts.length})</h3>
+          {selectedContacts.size > 0 && (
+            <button
+              onClick={handlePreviewSelected}
+              disabled={previewLoading}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50"
+            >
+              {previewLoading ? 'Loading...' : `Preview & Send (${selectedContacts.size})`}
+            </button>
+          )}
+        </div>
         {data.contacts.length === 0 ? (
           <p className="text-gray-600">No contacts assigned to this sequence yet.</p>
         ) : (
@@ -449,22 +494,47 @@ export default function SequenceDetailPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="p-3 text-left font-medium text-gray-600">Email</th>
-                  <th className="p-3 text-left font-medium text-gray-600">Current Step</th>
-                  <th className="p-3 text-left font-medium text-gray-600">Status</th>
+                  <th className="p-3 text-left">
+                    <input
+                      type="checkbox"
+                      onChange={() => {
+                        if (selectedContacts.size === data.contacts.length) {
+                          setSelectedContacts(new Set());
+                        } else {
+                          setSelectedContacts(new Set(data.contacts.map(c => c.id)));
+                        }
+                      }}
+                      checked={selectedContacts.size === data.contacts.length && data.contacts.length > 0}
+                    />
+                  </th>
+                  <th className="p-3 text-left font-medium text-gray-700">Email</th>
+                  <th className="p-3 text-left font-medium text-gray-700">Current Step</th>
+                  <th className="p-3 text-left font-medium text-gray-700">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {data.contacts.map(c => (
-                  <tr key={c.id} className="border-b border-gray-50">
-                    <td className="p-3">{c.email}</td>
-                    <td className="p-3">{c.current_step || 'Not started'}</td>
+                  <tr key={c.id} className={`border-b border-gray-50 hover:bg-gray-50 ${selectedContacts.has(c.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="p-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedContacts.has(c.id)}
+                        onChange={() => {
+                          const next = new Set(selectedContacts);
+                          if (next.has(c.id)) next.delete(c.id); else next.add(c.id);
+                          setSelectedContacts(next);
+                        }}
+                      />
+                    </td>
+                    <td className="p-3 text-gray-900 font-medium">{c.email}</td>
+                    <td className="p-3 text-gray-900">{c.current_step || 'Not started'}</td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                         c.status === 'active' ? 'bg-green-100 text-green-700' :
+                        c.status === 'needs_review' ? 'bg-orange-100 text-orange-700' :
                         c.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>{c.status}</span>
+                        'bg-gray-100 text-gray-900'
+                      }`}>{c.status === 'needs_review' ? 'Needs Review' : c.status}</span>
                     </td>
                   </tr>
                 ))}
