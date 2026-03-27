@@ -132,17 +132,13 @@ export default function SequenceDetailPage() {
     setEditedEmails({});
     setEditingBody(false);
     try {
-      const res = await fetch(`/api/sequences/${params.id}/preview`);
+      const contactIds = Array.from(selectedContacts).join(',');
+      const res = await fetch(`/api/sequences/${params.id}/preview?contact_ids=${contactIds}`);
       const result = await res.json();
       if (result.error) {
         setSendResult(`Error: ${result.error}`);
       } else {
-        // Filter to only the selected contacts
-        const filtered = {
-          ...result,
-          previews: result.previews.filter((p: { contactId: number }) => selectedContacts.has(p.contactId)),
-          previewCount: result.previews.filter((p: { contactId: number }) => selectedContacts.has(p.contactId)).length,
-        };
+        const filtered = result;
         const edits: Record<number, { subject: string; body: string }> = {};
         filtered.previews.forEach((p: { subject: string; body: string }, i: number) => {
           edits[i] = { subject: p.subject, body: p.body };

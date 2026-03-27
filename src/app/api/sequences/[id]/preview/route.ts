@@ -13,8 +13,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'No steps in this sequence' }, { status: 400 });
   }
 
+  // Parse optional contact_ids filter from query string
+  const url = new URL(_req.url);
+  const contactIdsParam = url.searchParams.get('contact_ids');
+  const contactIdFilter = contactIdsParam ? contactIdsParam.split(',').map(Number) : null;
+
   const contacts = await dbAll(`
-    SELECT * FROM contacts WHERE sequence_id = ? AND status = 'active'
+    SELECT * FROM contacts WHERE sequence_id = ? AND status IN ('active', 'needs_review')
   `, [id]) as unknown as {
     id: number; email: string; first_name: string; last_name: string;
     company: string; domain: string; current_step: number;
@@ -33,7 +38,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Build preview for each contact showing what they'd get next
   const previews = [];
 
-  for (const contact of contacts) {
+  // Apply contact ID filter if provided
+  const filteredContacts = contactIdFilter
+    ? contacts.filter(c => contactIdFilter.includes(Number(c.id)))
+    : contacts;
+
+  for (const contact of filteredContacts) {
     const nextStepOrder = (Number(contact.current_step) || 0) + 1;
     const step = steps.find(s => Number(s.step_order) === nextStepOrder);
 
