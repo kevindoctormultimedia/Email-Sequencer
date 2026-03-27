@@ -54,6 +54,7 @@ export default function SequenceDetailPage() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [editedEmails, setEditedEmails] = useState<Record<number, { subject: string; body: string }>>({});
   const [editingBody, setEditingBody] = useState(false);
+  const [selectedForSend, setSelectedForSend] = useState<Set<number>>(new Set());
 
   function loadData() {
     fetch(`/api/sequences/${params.id}`).then(r => r.json()).then(setData);
@@ -112,6 +113,8 @@ export default function SequenceDetailPage() {
           edits[i] = { subject: p.subject, body: p.body };
         });
         setEditedEmails(edits);
+        // Select all by default
+        setSelectedForSend(new Set(result.previews.map((_: unknown, i: number) => i)));
         setPreviewData(result);
         setShowPreview(true);
       }
@@ -135,14 +138,19 @@ export default function SequenceDetailPage() {
     setSending(true);
     setSendResult('');
     try {
-      // Build emails with edited content
-      const emails = previews.previews.map((p, i) => ({
-        contactId: p.contactId,
-        stepId: p.stepId,
-        contactEmail: p.contactEmail,
-        subject: editedEmails[i]?.subject || p.subject,
-        body: editedEmails[i]?.body || p.body,
-      }));
+      // Build emails with edited content — only send selected
+      const emails = previews.previews
+        .filter((_, i) => selectedForSend.has(i))
+        .map((p, i) => {
+          const origIndex = previews.previews.indexOf(p);
+          return {
+            contactId: p.contactId,
+            stepId: p.stepId,
+            contactEmail: p.contactEmail,
+            subject: editedEmails[origIndex]?.subject || p.subject,
+            body: editedEmails[origIndex]?.body || p.body,
+          };
+        });
 
       const res = await fetch(`/api/sequences/${params.id}/send-custom`, {
         method: 'POST',
@@ -279,30 +287,57 @@ export default function SequenceDetailPage() {
               </div>
             ) : (
               <>
-                {/* Email Navigation */}
-                {previews.previewCount > 1 && (
-                  <div className="px-6 py-2 bg-gray-50 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-                    <button
-                      onClick={() => setPreviewIndex(Math.max(0, previewIndex - 1))}
-                      disabled={previewIndex === 0}
-                      className="text-sm text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
-                    >
-                      ← Previous
-                    </button>
-                    <span className="text-sm text-gray-700 font-medium">
-                      {previewIndex + 1} of {previews.previewCount}
-                    </span>
-                    <button
-                      onClick={() => setPreviewIndex(Math.min(previews.previewCount - 1, previewIndex + 1))}
-                      disabled={previewIndex === previews.previewCount - 1}
-                      className="text-sm text-blue-600 hover:underline disabled:text-gray-400 disabled:no-underline"
-                    >
-                      Next →
-                    </button>
+                {/* Two-panel layout: contact list left, preview right */}
+                <div className="flex flex-1 overflow-hidden">
+                  {/* Left: Contact list with checkboxes */}
+                  <div className="w-56 flex-shrink-0 border-r border-gray-200 flex flex-col">
+                    <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Recipients</span>
+                      <button
+                        onClick={() => {
+                          if (selectedForSend.size === previews.previewCount) {
+                            setSelectedForSend(new Set());
+                          } else {
+                            setSelectedForSend(new Set(previews.previews.map((_, i) => i)));
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        {selectedForSend.size === previews.previewCount ? 'Deselect all' : 'Select all'}
+                      </button>
+                    </div>
+                    <div className="overflow-y-auto flex-1">
+                      {previews.previews.map((p, i) => (
+                        <div
+                          key={i}
+                          onClick={() => setPreviewIndex(i)}
+                          className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer border-b border-gray-50 text-sm ${
+                            previewIndex === i ? 'bg-blue-50 border-l-2 border-l-blue-500' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedForSend.has(i)}
+                            onChange={e => {
+                              e.stopPropagation();
+                              const next = new Set(selectedForSend);
+                              if (next.has(i)) next.delete(i); else next.add(i);
+                              setSelectedForSend(next);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            className="flex-shrink-0"
+                          />
+                          <div className="min-w-0">
+                            {p.contactName && <p className="font-medium text-gray-900 truncate text-xs">{p.contactName}</p>}
+                            <p className="text-gray-600 truncate text-xs">{p.contactEmail}</p>
+                            <p className="text-gray-400 text-xs">Step #{p.stepOrder}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                )}
 
-                {/* Email Content */}
+                {/* Right: Email Content */}
                 <div className="flex-1 overflow-y-auto p-6">
                   {(() => {
                     const email = previews.previews[previewIndex];
@@ -375,6 +410,7 @@ export default function SequenceDetailPage() {
                     );
                   })()}
                 </div>
+                </div>{/* end two-panel */}
 
                 {/* Modal Footer */}
                 <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between flex-shrink-0 bg-gray-50 rounded-b-2xl">
@@ -386,13 +422,14 @@ export default function SequenceDetailPage() {
                   </button>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-gray-600">
-                      Send {previews.previewCount} email{previews.previewCount !== 1 ? 's' : ''}?
+                      {selectedForSend.size} of {previews.previewCount} selected
                     </span>
                     <button
                       onClick={handleSendConfirmed}
-                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold shadow-sm"
+                      disabled={selectedForSend.size === 0}
+                      className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm font-bold shadow-sm"
                     >
-                      ✓ Confirm & Send
+                      ✓ Send {selectedForSend.size} Email{selectedForSend.size !== 1 ? 's' : ''}
                     </button>
                   </div>
                 </div>

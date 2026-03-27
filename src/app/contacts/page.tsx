@@ -293,33 +293,41 @@ export default function ContactsPage() {
                   {tab === 'review' ? (
                     <select
                       onChange={e => e.target.value && handleReview(c.id, Number(e.target.value))}
-                      className="px-2 py-1 border border-gray-200 rounded text-xs"
+                      className="px-2 py-1 border border-gray-200 rounded text-xs text-gray-900"
                       defaultValue=""
                     >
-                      <option value="">Assign sequence...</option>
-                      {sequences.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      <option value="" className="text-gray-400">Assign sequence...</option>
+                      {sequences.map(s => <option key={s.id} value={s.id} className="text-gray-900">{s.name}</option>)}
                     </select>
                   ) : (
                     <select
                       value={c.sequence_id || ''}
                       onChange={e => handleAssign(c.id, e.target.value)}
-                      className="px-2 py-1 border border-gray-200 rounded text-xs"
+                      className="px-2 py-1 border border-gray-200 rounded text-xs text-gray-900"
                     >
-                      <option value="">None</option>
-                      {sequences.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      <option value="" className="text-gray-400">None</option>
+                      {sequences.map(s => <option key={s.id} value={s.id} className="text-gray-900">{s.name}</option>)}
                     </select>
                   )}
                 </td>
-                <td className="p-3 text-gray-600">{c.current_step || '-'}</td>
+                <td className="p-3 text-gray-900">{c.current_step || '-'}</td>
                 <td className="p-3">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    c.status === 'active' ? 'bg-green-100 text-green-700' :
-                    c.status === 'needs_review' ? 'bg-orange-100 text-orange-700' :
-                    c.status === 'completed' ? 'bg-blue-100 text-blue-700' :
-                    'bg-gray-100 text-gray-600'
-                  }`}>
-                    {c.status}
-                  </span>
+                  {c.status === 'needs_review' ? (
+                    <span
+                      className="px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700 cursor-help"
+                      title="AI couldn't confidently detect the website maker. Assign this contact to a sequence manually using the dropdown to the left — that will mark it as active."
+                    >
+                      Needs Review
+                    </span>
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      c.status === 'active' ? 'bg-green-100 text-green-700' :
+                      c.status === 'completed' ? 'bg-blue-100 text-blue-700' :
+                      'bg-gray-100 text-gray-900'
+                    }`}>
+                      {c.status}
+                    </span>
+                  )}
                 </td>
                 <td className="p-3">
                   {c.status === 'needs_review' && (
