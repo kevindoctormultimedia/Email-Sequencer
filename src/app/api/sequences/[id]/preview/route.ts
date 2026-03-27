@@ -20,12 +20,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     company: string; domain: string; current_step: number;
   }[];
 
-  // Get sender settings
+  // Get sender settings (with OAuth fallbacks)
   const fromNameRow = await dbGet("SELECT value FROM settings WHERE key = 'from_name'") as unknown as { value: string } | null;
-  const fromName = fromNameRow?.value || '';
   const fromEmailRow = await dbGet("SELECT value FROM settings WHERE key = 'from_email'") as unknown as { value: string } | null;
-  const fromEmail = fromEmailRow?.value || '';
+  const oauthEmailRow = await dbGet("SELECT value FROM settings WHERE key = 'oauth_email'") as unknown as { value: string } | null;
   const signatureRow = await dbGet("SELECT value FROM settings WHERE key = 'email_signature'") as unknown as { value: string } | null;
+
+  const fromName = fromNameRow?.value || '';
+  const fromEmail = fromEmailRow?.value || oauthEmailRow?.value || '';
   const signature = signatureRow?.value || '';
 
   // Build preview for each contact showing what they'd get next

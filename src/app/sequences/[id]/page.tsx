@@ -52,6 +52,8 @@ export default function SequenceDetailPage() {
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [editedEmails, setEditedEmails] = useState<Record<number, { subject: string; body: string }>>({});
+  const [editingBody, setEditingBody] = useState(false);
 
   function loadData() {
     fetch(`/api/sequences/${params.id}`).then(r => r.json()).then(setData);
@@ -96,12 +98,20 @@ export default function SequenceDetailPage() {
   async function handlePreview() {
     setPreviewLoading(true);
     setPreviewIndex(0);
+    setEditedEmails({});
+    setEditingBody(false);
     try {
       const res = await fetch(`/api/sequences/${params.id}/preview`);
       const result = await res.json();
       if (result.error) {
         setSendResult(`Error: ${result.error}`);
       } else {
+        // Initialize editable state for each email
+        const edits: Record<number, { subject: string; body: string }> = {};
+        result.previews.forEach((p: { subject: string; body: string }, i: number) => {
+          edits[i] = { subject: p.subject, body: p.body };
+        });
+        setEditedEmails(edits);
         setPreviewData(result);
         setShowPreview(true);
       }
@@ -112,17 +122,38 @@ export default function SequenceDetailPage() {
     }
   }
 
+  function updateEditedEmail(index: number, field: 'subject' | 'body', value: string) {
+    setEditedEmails(prev => ({
+      ...prev,
+      [index]: { ...prev[index], [field]: value },
+    }));
+  }
+
   async function handleSendConfirmed() {
+    if (!previews) return;
     setShowPreview(false);
     setSending(true);
     setSendResult('');
     try {
-      const res = await fetch(`/api/sequences/${params.id}/send`, { method: 'POST' });
+      // Build emails with edited content
+      const emails = previews.previews.map((p, i) => ({
+        contactId: p.contactId,
+        stepId: p.stepId,
+        contactEmail: p.contactEmail,
+        subject: editedEmails[i]?.subject || p.subject,
+        body: editedEmails[i]?.body || p.body,
+      }));
+
+      const res = await fetch(`/api/sequences/${params.id}/send-custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emails }),
+      });
       const result = await res.json();
       if (result.error) {
         setSendResult(`Error: ${result.error}`);
       } else {
-        setSendResult(`✓ Sent ${result.sent} emails, ${result.skipped} skipped, ${result.errors} errors`);
+        setSendResult(`Sent ${result.sent} emails, ${result.errors} errors`);
         loadData();
       }
     } catch {
@@ -289,15 +320,20 @@ export default function SequenceDetailPage() {
                         <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
                           <div className="flex">
                             <span className="w-20 text-gray-600 font-medium">From:</span>
-                            <span className="text-gray-900">{email.fromName} &lt;{email.fromEmail}&gt;</span>
+                            <span className="text-gray-900">{email.fromName || 'Not set'} {email.fromEmail ? `<${email.fromEmail}>` : '— Set your name in Settings'}</span>
                           </div>
                           <div className="flex">
                             <span className="w-20 text-gray-600 font-medium">To:</span>
                             <span className="text-gray-900">{email.contactName ? `${email.contactName} <${email.contactEmail}>` : email.contactEmail}</span>
                           </div>
-                          <div className="flex">
-                            <span className="w-20 text-gray-600 font-medium">Subject:</span>
-                            <span className="text-gray-900 font-semibold">{email.subject}</span>
+                          <div className="flex items-center">
+                            <span className="w-20 text-gray-600 font-medium flex-shrink-0">Subject:</span>
+                            <input
+                              type="text"
+                              value={editedEmails[previewIndex]?.subject ?? email.subject}
+                              onChange={e => updateEditedEmail(previewIndex, 'subject', e.target.value)}
+                              className="flex-1 px-2 py-1 border border-gray-200 rounded text-gray-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
                           </div>
                           <div className="flex">
                             <span className="w-20 text-gray-600 font-medium">Step:</span>
@@ -305,17 +341,36 @@ export default function SequenceDetailPage() {
                           </div>
                         </div>
 
-                        {/* Email Body Preview */}
+                        {/* Email Body Preview - Editable */}
                         <div className="border border-gray-200 rounded-lg">
-                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-600 font-medium">
-                            EMAIL BODY PREVIEW
+                          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                            <span className="text-xs text-gray-600 font-medium">EMAIL BODY PREVIEW</span>
+                            <button
+                              type="button"
+                              onClick={() => setEditingBody(!editingBody)}
+                              className="text-xs text-blue-600 hover:underline font-medium"
+                            >
+                              {editingBody ? 'Show Preview' : 'Edit Body'}
+                            </button>
                           </div>
-                          <div
-                            className="p-6 text-sm leading-relaxed"
-                            style={{ fontFamily: 'Arial, sans-serif' }}
-                            dangerouslySetInnerHTML={{ __html: email.body }}
-                          />
+                          {editingBody ? (
+                            <textarea
+                              value={editedEmails[previewIndex]?.body ?? email.body}
+                              onChange={e => updateEditedEmail(previewIndex, 'body', e.target.value)}
+                              className="w-full p-4 text-sm font-mono leading-relaxed focus:outline-none min-h-[300px] text-gray-900"
+                              style={{ resize: 'vertical' }}
+                            />
+                          ) : (
+                            <div
+                              className="p-6 text-sm leading-relaxed text-gray-900"
+                              style={{ fontFamily: 'Arial, sans-serif', color: '#111' }}
+                              dangerouslySetInnerHTML={{ __html: editedEmails[previewIndex]?.body ?? email.body }}
+                            />
+                          )}
                         </div>
+                        {editingBody && (
+                          <p className="text-xs text-gray-600">Editing HTML directly. Supports HTML tags for formatting. Changes apply only to this recipient.</p>
+                        )}
                       </div>
                     );
                   })()}

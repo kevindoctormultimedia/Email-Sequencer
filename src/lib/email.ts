@@ -79,7 +79,7 @@ export function replaceTemplateVars(template: string, vars: Record<string, strin
     'Company': vars.company || '',
     'Domain': vars.domain || '',
     'Email': vars.email || '',
-    'Your Name': '', // Handled by signature / sender name
+    'Your Name': vars.your_name || vars.sender_name || '',
     'first name': vars.first_name || '',
     'last name': vars.last_name || '',
     'company': vars.company || '',
